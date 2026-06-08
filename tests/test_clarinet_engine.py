@@ -339,6 +339,11 @@ class PositionAwareMockModel:
                     logits[b, t, :] = float(t + 1)
         return logits
 
+    # categorical_logits_at calls the model as `self.model(ids)`, mirroring
+    # run_categorical_eval and the real nn.Module __call__ -> forward path.
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
 
 def test_base_engine_categorical_logits_at():
     """Engine.categorical_logits_at extracts logits at the correct positions."""
