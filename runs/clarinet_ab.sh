@@ -4,19 +4,23 @@
 # Holds the data mixture constant (reasoning_mix_ratio=0.5 for BOTH arms) and
 # varies ONLY the IV mechanism:
 #
-#   ARM A  "baseline"  : classic nanochat trained on the 50/50 climbmix+FineMath
-#                        mix, NO source markers, evaluated single-pass.
-#   ARM B  "clarinet"  : same 50/50 mix WITH source markers + p_uncond dropout,
-#                        evaluated dual-pass with an IV guidance-weight sweep.
+#   ARM A  "baseline"  : classic nanochat at depth 24, trained on the 50/50
+#                        climbmix+FineMath mix, NO source markers, single-pass eval.
+#   ARM B  "clarinet"  : depth 18, same 50/50 mix WITH source markers + p_uncond
+#                        dropout, dual-pass eval with an IV guidance-weight sweep.
+#
+# NOTE on interpretation: the two arms differ in BOTH depth (24 vs 18) AND the
+# IV mechanism. So this is a size-vs-mechanism comparison — it answers "can a
+# smaller (d18) IV-conditioned model match/beat a larger (d24) vanilla model?"
+# rather than a fixed-size IV ablation. (For a pure IV ablation, set both depths
+# equal.) The data mixture is held constant at 0.5 for both arms.
 #
 # Both arms share ONE tokenizer and ONE copy of the data (downloaded once), and
-# write to distinct checkpoint tags (d<depth>-base vs d<depth>-iv) so the only
-# difference between them is the IV machinery itself. This is the clean control:
-# it separates "the IV mechanism" from "you just added math data to training".
+# write to distinct checkpoint tags (d24-base vs d18-iv).
 #
-# Cost note: this trains TWO d24 models, so ~2x the single-speedrun budget
-# (~6-7h on 8xH100, ballpark $100-140 depending on Vast pricing). Provision
-# ~250GB disk (two sets of d24 checkpoints + shared data + caches).
+# Cost note: a d24 + a d18 pretrain together run ~5-6h on 8xH100 (ballpark
+# $90-130 depending on Vast pricing). Provision ~250GB disk (both checkpoint
+# sets + shared data + caches).
 #
 # Launch (inside tmux so an SSH drop doesn't kill it):
 #   tmux new -s clarinet
@@ -28,14 +32,15 @@ export OMP_NUM_THREADS=1
 export CLARINET_BASE_DIR="${CLARINET_BASE_DIR:-$HOME/.cache/nanochat}"
 mkdir -p "$CLARINET_BASE_DIR"
 
-DEPTH=24
+BASE_DEPTH=24      # ARM A "baseline": classic nanochat depth
+IV_DEPTH=18        # ARM B "clarinet": IV-conditioned model depth
 MIX=0.5            # reasoning_mix_ratio for BOTH arms — the held-constant variable
 NPROC=8
 DBS=16             # device-batch-size
 RATIO=8            # target data:param ratio
 WANDB_RUN="${WANDB_RUN:-dummy}"
-BASE_TAG="d${DEPTH}-base"
-IV_TAG="d${DEPTH}-iv"
+BASE_TAG="d${BASE_DEPTH}-base"
+IV_TAG="d${IV_DEPTH}-iv"
 
 # -----------------------------------------------------------------------------
 # Environment
@@ -69,7 +74,7 @@ echo "Waiting for FineMath prep...";     wait $RP
 # =============================================================================
 torchrun --standalone --nproc_per_node=$NPROC -m scripts.clarinet_train -- \
     --reasoning-mix-ratio=$MIX --no-markers \
-    --depth=$DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
+    --depth=$BASE_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
     --model-tag=$BASE_TAG --run=${WANDB_RUN}-base
 
 torchrun --standalone --nproc_per_node=$NPROC -m scripts.base_eval -- \
@@ -87,7 +92,7 @@ torchrun --standalone --nproc_per_node=$NPROC -m scripts.chat_eval -- \
 # =============================================================================
 torchrun --standalone --nproc_per_node=$NPROC -m scripts.clarinet_train -- \
     --reasoning-mix-ratio=$MIX --p-uncond=0.1 \
-    --depth=$DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
+    --depth=$IV_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
     --model-tag=$IV_TAG --run=${WANDB_RUN}-iv
 
 torchrun --standalone --nproc_per_node=$NPROC -m scripts.base_eval -- \
