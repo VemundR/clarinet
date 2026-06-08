@@ -1,8 +1,8 @@
 #!/bin/bash
-# Clarinet A/B experiment on 8xH100.
+# Clarinet A/B experiment — configured for a SINGLE H100 (1xH100).
 #
 # Holds the data mixture constant (reasoning_mix_ratio=0.5 for BOTH arms) and
-# varies ONLY the IV mechanism:
+# varies the model + IV mechanism:
 #
 #   ARM A  "baseline"  : classic nanochat at depth 24, trained on the 50/50
 #                        climbmix+FineMath mix, NO source markers, single-pass eval.
@@ -10,17 +10,26 @@
 #                        dropout, dual-pass eval with an IV guidance-weight sweep.
 #
 # NOTE on interpretation: the two arms differ in BOTH depth (24 vs 18) AND the
-# IV mechanism. So this is a size-vs-mechanism comparison — it answers "can a
-# smaller (d18) IV-conditioned model match/beat a larger (d24) vanilla model?"
-# rather than a fixed-size IV ablation. (For a pure IV ablation, set both depths
-# equal.) The data mixture is held constant at 0.5 for both arms.
+# IV mechanism. So this is a size-vs-mechanism comparison — "can a smaller (d18)
+# IV-conditioned model match/beat a larger (d24) vanilla model?" — not a
+# fixed-size IV ablation. (For a pure ablation set BASE_DEPTH == IV_DEPTH.)
 #
-# Both arms share ONE tokenizer and ONE copy of the data (downloaded once), and
-# write to distinct checkpoint tags (d24-base vs d18-iv).
+# Both arms share ONE tokenizer and ONE copy of the data, and write to distinct
+# checkpoint tags (d24-base vs d18-iv).
 #
-# Cost note: a d24 + a d18 pretrain together run ~5-6h on 8xH100 (ballpark
-# $90-130 depending on Vast pricing). Provision ~250GB disk (both checkpoint
-# sets + shared data + caches).
+# HARDWARE: single H100. We run plain `python -m` (no torchrun); nanochat
+# auto-uses gradient accumulation. FP8 + FA3 still apply (single H100 is Hopper).
+# To run on a multi-GPU node instead, set NPROC>1 below — the launcher switches
+# to torchrun automatically.
+#
+# TIMING / COST on 1xH100 (≈8x slower than an 8xH100 node, per model):
+#   - d24 baseline pretrain: ~24-28h  (!! a full day — this is the long pole)
+#   - d18 clarinet pretrain: ~5-6h
+#   - + SFT (~1-2h each) + evals (~1-3h)
+#   total ≈ ~35-40h wall-clock, ballpark $80-110 at ~$2-2.5/H100-hr.
+# Because the d24 baseline is so long, you may prefer to run the two arms as
+# separate sessions (see ARM A / ARM B blocks) rather than one ~1.5-day job.
+# Provision ~250GB disk (both checkpoint sets + shared data + caches).
 #
 # Launch (inside tmux so an SSH drop doesn't kill it):
 #   tmux new -s clarinet
@@ -35,12 +44,22 @@ mkdir -p "$CLARINET_BASE_DIR"
 BASE_DEPTH=24      # ARM A "baseline": classic nanochat depth
 IV_DEPTH=18        # ARM B "clarinet": IV-conditioned model depth
 MIX=0.5            # reasoning_mix_ratio for BOTH arms — the held-constant variable
-NPROC=8
-DBS=16             # device-batch-size
+NPROC=1            # GPUs to use. 1 = single H100 (this box). Set to 8 for an 8xH100 node.
+DBS=16             # device-batch-size (per GPU; fits d24 on an 80GB H100)
 RATIO=8            # target data:param ratio
 WANDB_RUN="${WANDB_RUN:-dummy}"
 BASE_TAG="d${BASE_DEPTH}-base"
 IV_TAG="d${IV_DEPTH}-iv"
+
+# Launcher: single GPU runs plain `python -m` (no torchrun, no `--` separator);
+# multi-GPU uses torchrun, which needs `--` before the script's own args.
+if [ "$NPROC" -gt 1 ]; then
+    LAUNCH=(torchrun --standalone --nproc_per_node="$NPROC" -m)
+    SEP=(--)
+else
+    LAUNCH=(python -m)
+    SEP=()
+fi
 
 # -----------------------------------------------------------------------------
 # Environment
@@ -52,17 +71,18 @@ source .venv/bin/activate
 python -m nanochat.report reset
 
 # -----------------------------------------------------------------------------
-# Shared data + tokenizer (downloaded/trained ONCE, used by both arms)
-# At mix=0.5 each corpus supplies half the tokens, so we need roughly equal
-# shard counts from each. These are generous; reduce if disk/time constrained.
+# Shared data + tokenizer (downloaded/trained ONCE, used by both arms).
+# FineMath prep is the parallel download+reshard path (fast). climbmix supplies
+# the general half; d24 @ mix 0.5 needs ~half its tokens from each source.
 python -m nanochat.dataset -n 8                 # enough for tokenizer training
 python -m nanochat.dataset -n 150 &             # climbmix (general) half
 DL=$!
-python -m clarinet.prepare_reasoning_data -n 120 &   # FineMath (reasoning) half
+python -m clarinet.prepare_reasoning_data -n 63 &   # FineMath (reasoning) half, ~all of finemath-4plus
 RP=$!
 
 # Tokenizer is retrained once (clarinet added 3 special tokens). BOTH arms use
-# this same tokenizer so vocab/BPB are directly comparable.
+# this same tokenizer so vocab/BPB are directly comparable. (Trained on climbmix
+# only — independent of the FineMath prep above, so they overlap fine.)
 python -m scripts.tok_train
 python -m scripts.tok_eval
 
@@ -70,40 +90,40 @@ echo "Waiting for climbmix download..."; wait $DL
 echo "Waiting for FineMath prep...";     wait $RP
 
 # =============================================================================
-# ARM A — BASELINE (classic nanochat on the mix, NO markers)
+# ARM A — BASELINE (classic nanochat on the mix, NO markers)   [the ~24-28h arm]
 # =============================================================================
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.clarinet_train -- \
+"${LAUNCH[@]}" scripts.clarinet_train "${SEP[@]}" \
     --reasoning-mix-ratio=$MIX --no-markers \
     --depth=$BASE_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
     --model-tag=$BASE_TAG --run=${WANDB_RUN}-base
 
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.base_eval -- \
+"${LAUNCH[@]}" scripts.base_eval "${SEP[@]}" \
     --device-batch-size=$DBS --model-tag=$BASE_TAG
 
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.chat_sft -- \
+"${LAUNCH[@]}" scripts.chat_sft "${SEP[@]}" \
     --model-tag=$BASE_TAG --device-batch-size=$DBS --run=${WANDB_RUN}-base
 
 # Baseline eval is single-pass (no IV). This is the reference number.
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.chat_eval -- \
+"${LAUNCH[@]}" scripts.chat_eval "${SEP[@]}" \
     -i sft -g $BASE_TAG
 
 # =============================================================================
 # ARM B — CLARINET (same mix, WITH markers + IV)
 # =============================================================================
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.clarinet_train -- \
+"${LAUNCH[@]}" scripts.clarinet_train "${SEP[@]}" \
     --reasoning-mix-ratio=$MIX --p-uncond=0.1 \
     --depth=$IV_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
     --model-tag=$IV_TAG --run=${WANDB_RUN}-iv
 
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.base_eval -- \
+"${LAUNCH[@]}" scripts.base_eval "${SEP[@]}" \
     --device-batch-size=$DBS --model-tag=$IV_TAG
 
-torchrun --standalone --nproc_per_node=$NPROC -m scripts.chat_sft -- \
+"${LAUNCH[@]}" scripts.chat_sft "${SEP[@]}" \
     --model-tag=$IV_TAG --device-batch-size=$DBS --run=${WANDB_RUN}-iv
 
-# Clarinet eval is the dual-pass IV sweep. w=0 -> unconditional, w=1 -> cond-only
-# (markers but no guidance), w>1 -> guided. Compare the curve against the
-# baseline's single number above.
+# Clarinet eval is the dual-pass IV sweep (always single-process). w=0 ->
+# unconditional, w=1 -> cond-only (markers but no guidance), w>1 -> guided.
+# Compare the curve against the baseline's single number above.
 python -m scripts.iv_eval -i sft -g $IV_TAG \
     -a GSM8K,ARC-Easy,ARC-Challenge,MMLU,HumanEval,SpellingBee \
     --weights 0,0.5,1.0,1.5,2.0,3.0
