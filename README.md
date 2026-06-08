@@ -232,7 +232,3 @@ Clarinet builds directly on nanochat; please cite the upstream project:
   url = {https://github.com/karpathy/nanochat}
 }
 ```
-
-## License
-
-MIT
