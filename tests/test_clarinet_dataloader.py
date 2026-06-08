@@ -211,6 +211,29 @@ def test_targets_masked_at_bos_input_positions(fake_paths):
     assert (non_bos != -1).any(), "no non-masked targets — something is wrong"
 
 
+def test_no_markers_inserts_no_markers_and_does_not_mask_bos(fake_paths):
+    # The A/B baseline arm: use_markers=False should behave like plain nanochat
+    # on the mixed corpus — no marker token after BOS, and BOS->next-token
+    # targets left intact (NOT masked to -1).
+    tok = MockTokenizer()
+    inputs, targets = _first_batch(tok, reasoning_mix_ratio=0.5, p_uncond=0.5,
+                                   use_markers=False, seed=0)
+
+    # No source-marker token id should appear anywhere in the inputs.
+    for marker_id in tok.MARKER_IDS:
+        assert not (inputs == marker_id).any(), (
+            f"marker {marker_id} found in inputs despite use_markers=False"
+        )
+
+    # BOS-input positions must NOT be force-masked to -1 (that masking is
+    # marker-specific). The target after BOS is the document's first real token.
+    bos_input_mask = inputs == tok.BOS
+    assert bos_input_mask.any(), "expected at least one BOS in the packed batch"
+    assert (targets[bos_input_mask] != -1).all(), (
+        "use_markers=False must not mask BOS-input targets (plain nanochat keeps them)"
+    )
+
+
 def test_loader_produces_correct_tensor_shapes(fake_paths):
     tok = MockTokenizer()
     loader = clarinet_data_loader(

@@ -126,6 +126,7 @@ def clarinet_data_loader(
     tokenizer, B, T, split,
     reasoning_mix_ratio=0.3,
     p_uncond=0.1,
+    use_markers=True,
     tokenizer_threads=4,
     tokenizer_batch_size=128,
     device="cuda",
@@ -143,6 +144,13 @@ def clarinet_data_loader(
     `seed` controls the per-doc p_uncond dropout RNG. We seed per rank so
     different ranks make independent dropout choices, which is fine because
     each rank handles its own row groups.
+
+    `use_markers` toggles the IV conditioning. When True (default), each
+    document is laid out as [BOS, marker, ...tokens] with p_uncond dropout,
+    and marker-prediction targets are masked. When False, no marker is
+    inserted and BOS targets are left intact — i.e. the loader becomes a
+    plain mixed-corpus (climbmix + reasoning) nanochat loader. This False
+    mode is the A/B *baseline* arm: same data mixture, no IV machinery.
     """
     assert split in ("train", "val"), "split must be 'train' or 'val'"
 
@@ -165,10 +173,11 @@ def clarinet_data_loader(
         token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
         true_marker = src_reasoning_id if is_reasoning else src_general_id
         for tokens in token_lists:
-            marker = src_unknown_id if rng.random() < p_uncond else true_marker
-            # tokens already starts with BOS; insert the source marker right after it,
-            # giving [BOS, marker, ...doc_tokens]
-            tokens.insert(1, marker)
+            if use_markers:
+                marker = src_unknown_id if rng.random() < p_uncond else true_marker
+                # tokens already starts with BOS; insert the source marker right after it,
+                # giving [BOS, marker, ...doc_tokens]
+                tokens.insert(1, marker)
             doc_buffer.append(tokens)
 
     use_cuda = device == "cuda"
@@ -212,8 +221,11 @@ def clarinet_data_loader(
         cpu_targets.copy_(row_buffer[:, 1:])
         # Mask the marker-prediction targets: any position whose input is BOS
         # has the source marker as its next-token label; we don't want to train
-        # the model to predict source.
-        cpu_targets[cpu_inputs == bos_token] = -1
+        # the model to predict source. Skipped in the no-marker baseline arm,
+        # where there is no marker after BOS and BOS->first-token prediction is
+        # legitimate training signal (matching plain nanochat).
+        if use_markers:
+            cpu_targets[cpu_inputs == bos_token] = -1
 
         state_dict = {"pq_idx": pq_idx, "rg_idx": rg_idx, "epoch": epoch}
 

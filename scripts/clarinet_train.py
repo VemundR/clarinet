@@ -29,17 +29,25 @@ def _parse_and_strip_clarinet_args():
                      help="Probability of overriding the true source marker with <|src_unknown|> during training.")
     pre.add_argument("--clarinet-seed", type=int, default=0,
                      help="Seed for the per-doc p_uncond dropout RNG (seeded per rank).")
+    pre.add_argument("--no-markers", action="store_true",
+                     help="Train WITHOUT source markers: classic-nanochat baseline on the "
+                          "mixed (climbmix + FineMath) corpus. Disables marker insertion, "
+                          "p_uncond dropout, and BOS-target masking. Use this for the A/B "
+                          "baseline arm; the data mixture (--reasoning-mix-ratio) still applies.")
     clarinet_args, remaining = pre.parse_known_args()
     sys.argv = [sys.argv[0]] + remaining
     return clarinet_args
 
 
 def _install_clarinet_dataloader(clarinet_args):
+    use_markers = not clarinet_args.no_markers
+
     def train_loader(tokenizer, B, T, split, **kwargs):
         return clarinet_data_loader(
             tokenizer, B, T, split,
             reasoning_mix_ratio=clarinet_args.reasoning_mix_ratio,
             p_uncond=clarinet_args.p_uncond,
+            use_markers=use_markers,
             seed=clarinet_args.clarinet_seed,
             **kwargs,
         )
@@ -52,6 +60,7 @@ def _install_clarinet_dataloader(clarinet_args):
             tokenizer, B, T, split,
             reasoning_mix_ratio=clarinet_args.reasoning_mix_ratio,
             p_uncond=0.0,
+            use_markers=use_markers,
             seed=clarinet_args.clarinet_seed,
             **kwargs,
         ):
