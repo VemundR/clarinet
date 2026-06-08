@@ -1,0 +1,10 @@
+# Shell scripts must use LF line endings so they run on Linux even when the
+# repo is committed/edited from Windows. Without this, a CRLF-ified run script
+# fails on a Linux/CUDA box with errors like `$'\r': command not found`.
+*.sh text eol=lf
+
+# Python is LF too, for consistency across Windows/Linux checkouts.
+*.py text eol=lf
+
+# Normalize line endings for other text by default; Git auto-detects binary.
+* text=auto
