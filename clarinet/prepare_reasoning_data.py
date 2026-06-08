@@ -46,6 +46,9 @@ def main():
     parser.add_argument("--repo", default=DEFAULT_REPO, help="HF dataset repo id.")
     parser.add_argument("--config", default=DEFAULT_CONFIG, help="HF dataset config / subset.")
     parser.add_argument("--max-workers", type=int, default=16, help="Parallel download workers.")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-reshard even if output shards already exist (default: skip existing, "
+                             "so re-runs / resumes are near-instant no-ops).")
     args = parser.parse_args()
 
     out_dir = reasoning_data_dir()
@@ -62,22 +65,36 @@ def main():
         raise SystemExit(f"No parquet files found under {args.repo}:{args.config}/")
     n_total = min(args.num_shards + 1, len(all_files))  # +1 for the validation shard
     take = all_files[:n_total]
+    dsts = [os.path.join(out_dir, f"shard_{i:05d}.parquet") for i in range(n_total)]
+
+    # Idempotent skip: if every target shard already exists, do nothing (don't
+    # even hit the network). Lets re-runs / resumed pipelines be near-instant.
+    if not args.force and all(os.path.exists(d) for d in dsts):
+        print(f"All {n_total} shards already present in {out_dir}; nothing to do "
+              f"(use --force to rebuild).")
+        return
+
     print(f"{args.repo}/{args.config}: {len(all_files)} files available; "
           f"downloading {n_total} in parallel ({args.max_workers} workers)...")
-
     local = snapshot_download(
         repo_id=args.repo, repo_type="dataset",
         allow_patterns=take, max_workers=args.max_workers,
     )
 
     print(f"Resharding into {out_dir}")
+    written = 0
     for i, rel in enumerate(take):
+        dst = dsts[i]
+        if not args.force and os.path.exists(dst):
+            print(f"  skip shard_{i:05d}.parquet (already exists)")
+            continue
         table = pq.read_table(os.path.join(local, rel), columns=["text"])  # C++ read
-        dst = os.path.join(out_dir, f"shard_{i:05d}.parquet")
         pq.write_table(table, dst, compression="zstd", row_group_size=DOCS_PER_ROW_GROUP)
         print(f"  wrote shard_{i:05d}.parquet ({table.num_rows} docs)")
+        written += 1
 
-    print(f"Done. Wrote {n_total} shards ({n_total - 1} train + 1 val) to {out_dir}")
+    print(f"Done. {n_total} shards present ({n_total - 1} train + 1 val) in {out_dir} "
+          f"[{written} written, {n_total - written} already existed]")
 
 
 if __name__ == "__main__":

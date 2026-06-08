@@ -49,8 +49,17 @@ RP=$!
 
 # Tokenizer (retrained once; clarinet added 3 special tokens). Trained on
 # climbmix only, so it overlaps with the FineMath prep above.
-python -m scripts.tok_train
-python -m scripts.tok_eval
+# Idempotent: skip if a tokenizer already exists so re-runs don't redo ~10min of
+# BPE training. Set FORCE_TOKENIZER=1 (or delete the tokenizer dir) to retrain —
+# do that if you changed SPECIAL_TOKENS, since a stale tokenizer would lack the
+# source markers.
+if [ -z "$FORCE_TOKENIZER" ] && [ -f "$CLARINET_BASE_DIR/tokenizer/tokenizer.pkl" ]; then
+    echo "Tokenizer already present at $CLARINET_BASE_DIR/tokenizer — skipping tok_train"
+    echo "(set FORCE_TOKENIZER=1 to retrain)."
+else
+    python -m scripts.tok_train
+    python -m scripts.tok_eval
+fi
 
 echo "Waiting for climbmix download..."; wait $DL
 echo "Waiting for FineMath prep...";     wait $RP
