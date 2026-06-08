@@ -216,8 +216,7 @@ guidance weight, measured by `scripts/iv_eval.py`.
 - Thank you to [HuggingFace](https://huggingface.co/) for FineWeb, SmolTalk, and
   FineMath (`HuggingFaceTB/finemath`), used as the reasoning corpus.
 
-See [NOTICE.md](NOTICE.md) for the precise upstream relationship; both copyrights
-are preserved in [LICENSE](LICENSE) per the MIT License.
+See [NOTICE.md](NOTICE.md) for the precise upstream relationship.
 
 ## Cite
 

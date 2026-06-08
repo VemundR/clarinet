@@ -6,4 +6,4 @@ Clarinet is a research project by Vemund Rundberget that imports the econometric
 
 Clarinet is a fork of [`nanochat`](https://github.com/karpathy/nanochat) by Andrej Karpathy. The original `nanochat/` package is retained largely unchanged so that upstream improvements can be rebased cleanly. Clarinet's contributions live in the sibling `clarinet/` package and a handful of new scripts under `scripts/` and `runs/`.
 
-Both copyrights are preserved in `LICENSE` per the terms of the MIT License.
+The upstream nanochat project is by Andrej Karpathy.
