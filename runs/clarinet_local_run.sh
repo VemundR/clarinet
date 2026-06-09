@@ -1,4 +1,10 @@
 #!/bin/bash
+# UNMAINTAINED — AMD/ROCm experimental path. The project moved to rented NVIDIA
+# boxes (see runs/clarinet_iv_1gpu.sh and runs/clarinet_ab.sh, which are kept
+# current). This script is retained for reference: WSL ROCm never worked on the
+# RX 7900 XT (libhsakmt topology assertion), Windows-native ROCm worked but has
+# no Triton/torch.compile. Expect drift.
+#
 # clarinet local run for single-GPU setups (e.g. AMD RX 7900 XT in WSL2 with ROCm).
 #
 # Differences from runs/clarinet_speedrun.sh (which targets 8xH100 + Hopper-specific features):
@@ -102,12 +108,12 @@ python -m scripts.clarinet_train \
 python -m scripts.base_eval --device-batch-size=2
 
 # -----------------------------------------------------------------------------
-# SFT (~4-6 hrs)
+# SFT (~4-6 hrs) — marker-aware, so the IV conditioning survives fine-tuning
 
 curl -L -o "$CLARINET_BASE_DIR/identity_conversations.jsonl" \
     https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
 
-python -m scripts.chat_sft --device-batch-size=2 --run=$WANDB_RUN
+python -m scripts.clarinet_sft --p-uncond=0.1 --device-batch-size=2 --run=$WANDB_RUN
 
 # Vanilla chat eval for reference accuracy without IV combination
 python -m scripts.chat_eval -i sft

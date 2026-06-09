@@ -26,6 +26,12 @@ Usage (single GPU):
   python -m scripts.clarinet_sft --model-tag=d18-iv --device-batch-size=16 --p-uncond=0.1
 
 Everything after the clarinet-specific flags is forwarded to chat_sft unchanged.
+
+CAVEAT: the ChatCORE numbers chat_sft prints DURING training come from its
+internal eval, which renders prompts without markers and samples single-pass —
+i.e. they evaluate this marker-trained model slightly off-distribution. Use
+them as a progress signal only; the real numbers come from scripts/iv_eval
+(dual-pass, marker-consistent) after training.
 """
 
 import argparse
@@ -62,8 +68,21 @@ def _parse_and_strip_clarinet_args():
     return clarinet_args
 
 
+def marker_for(is_reasoning, p_uncond, seed, index):
+    """
+    Deterministic per-conversation marker choice. The dropout decision hashes
+    (seed, index) instead of consuming a shared RNG stream, so every render of
+    the same conversation gets the same marker. In particular the VAL loader's
+    bpb becomes reproducible across runs (a shared RNG made it stochastic).
+    """
+    drop = random.Random(seed * 1_000_003 + index).random() < p_uncond
+    if drop:
+        return SRC_UNKNOWN
+    return SRC_REASONING if is_reasoning else SRC_GENERAL
+
+
 def _install(p_uncond, seed):
-    # --- Hook 1: tag each conversation with its source's is_reasoning flag ---
+    # --- Hook 1: tag each conversation with its source's marker ---
     OrigMixture = _tasks_common.TaskMixture
 
     class MarkerTaskMixture(OrigMixture):
@@ -71,7 +90,8 @@ def _install(p_uncond, seed):
             task_idx, local_idx = self.index_map[index]
             conv = self.tasks[task_idx][local_idx]
             conv = dict(conv)  # shallow copy; don't mutate the task's dict
-            conv["_is_reasoning"] = type(self.tasks[task_idx]).__name__ in REASONING_TASK_NAMES
+            is_reasoning = type(self.tasks[task_idx]).__name__ in REASONING_TASK_NAMES
+            conv["_marker"] = marker_for(is_reasoning, p_uncond, seed, index)
             return conv
 
     _tasks_common.TaskMixture = MarkerTaskMixture
@@ -79,18 +99,13 @@ def _install(p_uncond, seed):
     # --- Hook 2: splice the marker into the rendered conversation ---
     Tokenizer = _tokenizer_mod.RustBPETokenizer
     orig_render = Tokenizer.render_conversation
-    rng = random.Random(seed)
 
     def render_conversation(self, conversation, max_tokens=2048):
-        is_reasoning = conversation.get("_is_reasoning") if isinstance(conversation, dict) else None
+        marker_name = conversation.get("_marker") if isinstance(conversation, dict) else None
         ids, mask = orig_render(self, conversation, max_tokens=max_tokens)
-        if is_reasoning is None:
+        if marker_name is None:
             return ids, mask  # not from our tagged mixture -> behave like upstream
-        if rng.random() < p_uncond:
-            marker = self.encode_special(SRC_UNKNOWN)
-        else:
-            marker = self.encode_special(SRC_REASONING if is_reasoning else SRC_GENERAL)
-        return _splice_marker(ids, mask, marker, max_tokens)
+        return _splice_marker(ids, mask, self.encode_special(marker_name), max_tokens)
 
     Tokenizer.render_conversation = render_conversation
 

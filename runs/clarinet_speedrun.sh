@@ -73,11 +73,13 @@ torchrun --standalone --nproc_per_node=8 -m scripts.clarinet_train -- \
 torchrun --standalone --nproc_per_node=8 -m scripts.base_eval -- --device-batch-size=16
 
 # -----------------------------------------------------------------------------
-# SFT
+# SFT — marker-aware (clarinet_sft). The upstream chat_sft trains without source
+# markers, which washes the IV conditioning out of the chat model and makes the
+# iv_eval sweep below a guaranteed null.
 curl -L -o "$CLARINET_BASE_DIR/identity_conversations.jsonl" \
     https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
 
-torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- --device-batch-size=16 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=8 -m scripts.clarinet_sft -- --p-uncond=0.1 --device-batch-size=16 --run=$WANDB_RUN
 
 # Vanilla single-pass chat eval (for a reference accuracy without IV combination)
 torchrun --standalone --nproc_per_node=8 -m scripts.chat_eval -- -i sft

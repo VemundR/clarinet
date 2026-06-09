@@ -67,34 +67,31 @@ def main():
     take = all_files[:n_total]
     dsts = [os.path.join(out_dir, f"shard_{i:05d}.parquet") for i in range(n_total)]
 
-    # Idempotent skip: if every target shard already exists, do nothing (don't
-    # even hit the network). Lets re-runs / resumed pipelines be near-instant.
-    if not args.force and all(os.path.exists(d) for d in dsts):
+    # Idempotent: only download + reshard files whose output shard is missing,
+    # so re-runs and resumed pipelines neither hit the network nor redo work.
+    missing = [(i, rel) for i, rel in enumerate(take)
+               if args.force or not os.path.exists(dsts[i])]
+    if not missing:
         print(f"All {n_total} shards already present in {out_dir}; nothing to do "
               f"(use --force to rebuild).")
         return
 
     print(f"{args.repo}/{args.config}: {len(all_files)} files available; "
-          f"downloading {n_total} in parallel ({args.max_workers} workers)...")
+          f"{n_total - len(missing)} shards already present; downloading "
+          f"{len(missing)} files in parallel ({args.max_workers} workers)...")
     local = snapshot_download(
         repo_id=args.repo, repo_type="dataset",
-        allow_patterns=take, max_workers=args.max_workers,
+        allow_patterns=[rel for _, rel in missing], max_workers=args.max_workers,
     )
 
     print(f"Resharding into {out_dir}")
-    written = 0
-    for i, rel in enumerate(take):
-        dst = dsts[i]
-        if not args.force and os.path.exists(dst):
-            print(f"  skip shard_{i:05d}.parquet (already exists)")
-            continue
+    for i, rel in missing:
         table = pq.read_table(os.path.join(local, rel), columns=["text"])  # C++ read
-        pq.write_table(table, dst, compression="zstd", row_group_size=DOCS_PER_ROW_GROUP)
+        pq.write_table(table, dsts[i], compression="zstd", row_group_size=DOCS_PER_ROW_GROUP)
         print(f"  wrote shard_{i:05d}.parquet ({table.num_rows} docs)")
-        written += 1
 
     print(f"Done. {n_total} shards present ({n_total - 1} train + 1 val) in {out_dir} "
-          f"[{written} written, {n_total - written} already existed]")
+          f"[{len(missing)} written, {n_total - len(missing)} already existed]")
 
 
 if __name__ == "__main__":
