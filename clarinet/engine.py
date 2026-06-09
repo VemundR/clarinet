@@ -203,28 +203,24 @@ class ClarinetEngine(Engine):
             logits = combine(cond_logits, uncond_logits)
 
     @torch.inference_mode()
-    def categorical_logits_at(self, token_lists, answer_positions,
-                              iv_weight=1.5, wald_scale=1.0,
-                              scale_lo=1.0, scale_hi=1.0):
+    def categorical_dual_logits(self, token_lists, answer_positions):
         """
-        Dual-pass categorical logits: insert source markers, run conditional
-        and unconditional forward passes, combine via IV formula, and return
-        logits at the answer positions.
+        Raw dual-pass categorical logits at the answer positions, BEFORE the IV
+        combine. Returns (cond_at, uncond_at), each a (B, V) tensor.
 
-        This is the categorical-evaluation counterpart of generate() — it
-        applies the same dual-pass IV combine to every answer position in a
-        batched forward pass (no autoregressive decoding).
+        These are weight-independent, so a guidance-weight *sweep* can call this
+        once per batch and combine cheaply for every w (see scripts/iv_eval.py's
+        cached categorical sweep) instead of re-running both forward passes for
+        every weight.
 
         Args:
             token_lists: list of list of int — unpadded token sequences
             answer_positions: list of int — position of the answer token in each
                 sequence (indexing into the *original* sequences before marker
                 insertion)
-            iv_weight: guidance weight (0 = unconditional, 1 = conditional)
-            wald_scale: constant scale factor
-            scale_lo, scale_hi: bounds for L1 adaptive scale (lo == hi -> constant)
         Returns:
-            (B, V) tensor of combined logits at the answer positions
+            (cond_at, uncond_at): two (B, V) tensors of logits at the answer
+                positions for the reasoning-marked and unknown-marked passes.
         """
         device = self.model.get_device()
         bos = self.tokenizer.get_bos_token_id()
@@ -257,6 +253,18 @@ class ClarinetEngine(Engine):
         arange = torch.arange(B, device=device)
         cond_at = cond_logits[arange, positions]      # (B, V)
         uncond_at = uncond_logits[arange, positions]   # (B, V)
+        return cond_at, uncond_at
 
+    @torch.inference_mode()
+    def categorical_logits_at(self, token_lists, answer_positions,
+                              iv_weight=1.5, wald_scale=1.0,
+                              scale_lo=1.0, scale_hi=1.0):
+        """
+        Dual-pass categorical logits combined via the IV formula at a single
+        weight (the categorical counterpart of generate()). Used by chat_eval
+        and any single-weight categorical evaluation. A weight *sweep* should
+        instead call categorical_dual_logits once and combine_logits per weight.
+        """
+        cond_at, uncond_at = self.categorical_dual_logits(token_lists, answer_positions)
         s = self.l1_adaptive_scale(cond_at, uncond_at, wald_scale, scale_lo, scale_hi)
         return self.combine_logits(cond_at, uncond_at, iv_weight, s)

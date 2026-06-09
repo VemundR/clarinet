@@ -416,3 +416,20 @@ def test_categorical_logits_at_multi_element_batch():
     # seq2: cond@5 = 6.0, uncond@5 = 0.0 -> 0 + 1.5*(6-0) = 9.0
     assert torch.allclose(logits[0], torch.full((model.vocab_size,), 6.0))
     assert torch.allclose(logits[1], torch.full((model.vocab_size,), 9.0))
+
+
+def test_categorical_dual_logits_matches_direct_combine():
+    """The cached iv_eval sweep path (categorical_dual_logits computed once, then
+    combine_logits per weight) must equal the direct categorical_logits_at at
+    every weight. Guards the speedup refactor against drift."""
+    model = PositionAwareMockModel()
+    eng = ClarinetEngine(model, ClarinetByteTokenizer())
+    token_lists = [[261, 10, 20], [261, 10, 20, 30, 40]]
+    answer_positions = [2, 4]
+    cond_at, uncond_at = eng.categorical_dual_logits(token_lists, answer_positions)
+    assert cond_at.shape == (2, model.vocab_size)
+    assert uncond_at.shape == (2, model.vocab_size)
+    for w in [0.0, 1.0, 1.5, 2.0, 3.0]:
+        cached = eng.combine_logits(cond_at, uncond_at, w, 1.0)
+        direct = eng.categorical_logits_at(token_lists, answer_positions, iv_weight=w, wald_scale=1.0)
+        assert torch.allclose(cached, direct), f"cached != direct at w={w}"
