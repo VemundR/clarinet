@@ -74,10 +74,12 @@ python -m scripts.clarinet_train \
 # Base-model BPB / CORE sanity (single-pass; optional but informative).
 python -m scripts.base_eval --device-batch-size=$DBS --model-tag=$IV_TAG
 
-# SFT
+# SFT — marker-aware (clarinet_sft), so the chat model keeps the source-marker
+# conditioning instead of washing it out like the upstream marker-naive SFT.
 curl -L -o "$CLARINET_BASE_DIR/identity_conversations.jsonl" \
     https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl || true
-python -m scripts.chat_sft --model-tag=$IV_TAG --device-batch-size=$DBS --run=${WANDB_RUN}-iv
+python -m scripts.clarinet_sft --model-tag=$IV_TAG --device-batch-size=$DBS \
+    --p-uncond=0.1 --run=${WANDB_RUN}-iv
 
 # Dual-pass IV guidance sweep — the actual clarinet result.
 # w=0 -> unconditional, w=1 -> cond-only (markers, no guidance), w>1 -> guided.

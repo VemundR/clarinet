@@ -118,8 +118,9 @@ echo "Waiting for FineMath prep...";     wait $RP
 "${LAUNCH[@]}" scripts.base_eval "${SEP[@]}" \
     --device-batch-size=$DBS --model-tag=$IV_TAG
 
-"${LAUNCH[@]}" scripts.chat_sft "${SEP[@]}" \
-    --model-tag=$IV_TAG --device-batch-size=$DBS --run=${WANDB_RUN}-iv
+# marker-aware SFT (keeps the source-marker conditioning through fine-tuning)
+"${LAUNCH[@]}" scripts.clarinet_sft "${SEP[@]}" \
+    --model-tag=$IV_TAG --device-batch-size=$DBS --p-uncond=0.1 --run=${WANDB_RUN}-iv
 
 # Clarinet eval is the dual-pass IV sweep (always single-process). w=0 ->
 # unconditional, w=1 -> cond-only (markers but no guidance), w>1 -> guided.
