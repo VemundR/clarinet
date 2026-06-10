@@ -21,10 +21,17 @@ wandb/
 /share/
 /include/
 
-# Local installer downloads (ROCm, etc.)
+# Local installer downloads (ROCm, etc.) and stray wheels
 *.deb
+*.deb.*
 *.rpm
+/*.whl
 
 # Downloaded artifacts from one-off curls
 /index.html
+
+# Misc local junk
+/.lock
+.ipynb_checkpoints/
+/clarinet_kj*r_readme.txt
 
