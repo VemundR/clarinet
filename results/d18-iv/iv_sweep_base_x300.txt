@@ -1,0 +1,13 @@
+IV guidance sweep (scripts.iv_eval), BASE model d18-iv step 2475
+Run: 2026-06-09, 1xH100, -x 300, weights {0, 1, 2}.
+
+========== Summary (rows=task, cols=w) ==========
+task                   0.00     1.00     2.00
+GSM8K                 0.00%    0.00%    0.00%
+ARC-Easy             26.00%   26.00%   25.33%
+MMLU                 23.67%   23.67%   23.67%
+
+Reading: UNINFORMATIVE, not null — the base model is at the task floor
+(chance is 25% on ARC/MMLU; base models can't follow GSM8K answer format),
+so task accuracy has no power to detect marker conditioning here. The
+distribution-level probe (iv_probe_base.txt) is the valid first-stage test.
