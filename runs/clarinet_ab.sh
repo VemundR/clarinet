@@ -10,9 +10,15 @@
 #                        dropout, dual-pass eval with an IV guidance-weight sweep.
 #
 # NOTE on interpretation: the two arms differ in BOTH depth (24 vs 18) AND the
-# IV mechanism. So this is a size-vs-mechanism comparison — "can a smaller (d18)
-# IV-conditioned model match/beat a larger (d24) vanilla model?" — not a
-# fixed-size IV ablation. (For a pure ablation set BASE_DEPTH == IV_DEPTH.)
+# IV mechanism. The depths are chosen so INFERENCE compute matches: clarinet's
+# dual pass costs 2x per token, and d18 ~ 0.42x d24 per pass, so dual-pass d18
+# ~ 0.84x single-pass d24 — a test-time-FLOPs-matched comparison ("same serving
+# budget: bigger model, or guidance?"). Training compute is NOT matched (d24
+# trains ~2.4x more; favors the baseline). Clarinet also needs 2x KV memory.
+# For a fixed-size IV ablation set BASE_DEPTH == IV_DEPTH.
+#
+# SKIPPING ARMS: if one arm is already trained (e.g. d18-iv from a previous
+# session), skip it: SKIP_IV=1 bash runs/clarinet_ab.sh  (or SKIP_BASE=1).
 #
 # Both arms share ONE tokenizer and ONE copy of the data, and write to distinct
 # checkpoint tags (d24-base vs d18-iv).
@@ -92,6 +98,7 @@ echo "Waiting for FineMath prep...";     wait $RP
 # =============================================================================
 # ARM A — BASELINE (classic nanochat on the mix, NO markers)   [the ~24-28h arm]
 # =============================================================================
+if [ -z "$SKIP_BASE" ]; then
 "${LAUNCH[@]}" scripts.clarinet_train "${SEP[@]}" \
     --reasoning-mix-ratio=$MIX --no-markers \
     --depth=$BASE_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
@@ -106,10 +113,12 @@ echo "Waiting for FineMath prep...";     wait $RP
 # Baseline eval is single-pass (no IV). This is the reference number.
 "${LAUNCH[@]}" scripts.chat_eval "${SEP[@]}" \
     -i sft -g $BASE_TAG
+fi # SKIP_BASE
 
 # =============================================================================
 # ARM B — CLARINET (same mix, WITH markers + IV)
 # =============================================================================
+if [ -z "$SKIP_IV" ]; then
 "${LAUNCH[@]}" scripts.clarinet_train "${SEP[@]}" \
     --reasoning-mix-ratio=$MIX --p-uncond=0.1 \
     --depth=$IV_DEPTH --target-param-data-ratio=$RATIO --device-batch-size=$DBS --fp8 \
@@ -128,6 +137,7 @@ echo "Waiting for FineMath prep...";     wait $RP
 python -m scripts.iv_eval -i sft -g $IV_TAG \
     -a GSM8K,ARC-Easy,ARC-Challenge,MMLU,HumanEval,SpellingBee \
     --weights 0,0.5,1.0,1.5,2.0,3.0
+fi # SKIP_IV
 
 # -----------------------------------------------------------------------------
 python -m nanochat.report generate
