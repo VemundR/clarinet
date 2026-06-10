@@ -67,6 +67,8 @@ def sweep_categorical(task_object, tokenizer, engine, weights, batch_size, max_p
     score every weight from the cached (cond, uncond) logits. Returns {w: acc}.
     Single-process (iv_eval is run on one GPU).
     """
+    # max_problems takes the FIRST n examples — unbiased because every task
+    # shuffles with a fixed seed at load time (ds.shuffle(seed=42) in tasks/).
     n = len(task_object) if max_problems is None else min(len(task_object), max_problems)
     ceil_div = lambda a, b: -(-a // b)
     num_batches = ceil_div(n, batch_size)

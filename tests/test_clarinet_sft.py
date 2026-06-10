@@ -4,7 +4,8 @@ Tests for clarinet's marker-aware SFT splice logic.
 Run: python -m pytest tests/test_clarinet_sft.py -v
 """
 
-from scripts.clarinet_sft import _splice_marker, REASONING_TASK_NAMES
+from clarinet.dataloader import SRC_GENERAL, SRC_REASONING, SRC_UNKNOWN
+from scripts.clarinet_sft import _splice_marker, marker_for, REASONING_TASK_NAMES
 
 
 def test_splice_marker_inserts_after_bos():
@@ -33,6 +34,29 @@ def test_splice_marker_truncates_to_max_tokens():
     out_ids, out_mask = _splice_marker(ids, mask, 1003, max_tokens=5)
     assert len(out_ids) == 5 and len(out_mask) == 5
     assert out_ids[:2] == [1000, 1003]  # BOS, marker still lead
+
+
+def test_marker_for_is_deterministic_per_conversation():
+    # Same (seed, index) must always give the same marker — this is what makes
+    # the val-loader bpb reproducible across runs.
+    for idx in range(50):
+        a = marker_for(True, p_uncond=0.5, seed=7, index=idx)
+        b = marker_for(True, p_uncond=0.5, seed=7, index=idx)
+        assert a == b
+
+
+def test_marker_for_respects_p_uncond_extremes():
+    for idx in range(50):
+        assert marker_for(True, 0.0, 0, idx) == SRC_REASONING
+        assert marker_for(False, 0.0, 0, idx) == SRC_GENERAL
+        assert marker_for(True, 1.0, 0, idx) == SRC_UNKNOWN
+        assert marker_for(False, 1.0, 0, idx) == SRC_UNKNOWN
+
+
+def test_marker_for_dropout_rate_is_plausible():
+    n = 2000
+    drops = sum(marker_for(True, 0.1, 0, i) == SRC_UNKNOWN for i in range(n))
+    assert 0.05 < drops / n < 0.16  # ~10% within loose binomial tolerance
 
 
 def test_reasoning_task_names_are_sensible():
