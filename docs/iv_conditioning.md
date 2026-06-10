@@ -3,16 +3,15 @@
 This note explains how Clarinet conditions an autoregressive language model on
 the *source* of a document, how that conditioning is installed during training,
 and how it is exploited at inference — including the L1 content-adaptive
-guidance schedule. It is written to be read top to bottom: each layer builds on
-the one before it.
+guidance schedule.
 
 Clarinet is a research fork of nanochat. Everything below concerns the files in
 `clarinet/` (`dataset.py`, `dataloader.py`, `engine.py`) plus the special-token
 registration in `nanochat/tokenizer.py` and the loss path in `nanochat/gpt.py`.
 The technique is a classifier-free-guidance (CFG) adaptation of autoregressive
-text generation, dressed in instrumental-variable (IV) vocabulary; we keep the
-IV names because the code uses them, but the honest description is "CFG with a
-source marker."
+text generation which takes the intuition of instrumental variables in applied
+data science for identifying more reasoning data by conditioning on source
+markers in both pre-training and finetuning.
 
 ---
 
@@ -20,7 +19,7 @@ source marker."
 
 A plain language model learns one next-token distribution `p(x_t | x_<t)`. We
 would like to *steer* generation toward a particular kind of text — here,
-"reasoning"-style (math, step-by-step) continuations versus generic web text —
+"reasoning"-style (math here, can be expanded) continuations versus generic web text —
 without training a separate model or a reward model.
 
 The mechanism is a single extra token, the **source marker**, placed at the
@@ -28,8 +27,7 @@ start of every document. During training the model sees the marker that
 describes where the document came from, so it learns a *conditional*
 distribution `p(x_t | x_<t, marker)`. At inference we run the model twice —
 once with the "reasoning" marker, once with a neutral "unknown" marker — and
-push the output distribution in the direction the marker induces. That push is
-the whole game; sections 5–6 make it precise.
+push the output distribution in the direction the marker induces.
 
 The reason a *single* model can produce both the conditional and the neutral
 distribution is a training-time dropout trick (section 4). The reason we are
