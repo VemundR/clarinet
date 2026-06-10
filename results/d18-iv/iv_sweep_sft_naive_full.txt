@@ -1,0 +1,16 @@
+IV guidance sweep (scripts.iv_eval), SFT model trained with MARKER-NAIVE upstream chat_sft
+Model: chatsft_checkpoints/d18-iv step 486. Run: 2026-06-09, 1xH100, full task sizes,
+weights 0..3 (pre-speedup version of iv_eval; ~8h wall clock).
+
+========== Summary (rows=task, cols=w) ==========
+task                   0.00     0.50     1.00     1.50     2.00     3.00
+GSM8K                 8.87%    8.95%    8.87%    8.26%    8.11%    7.51%
+ARC-Easy             37.88%   37.84%   38.05%   37.84%   37.79%   37.88%
+ARC-Challenge        32.17%   31.83%   31.91%   31.48%   31.74%   32.51%
+MMLU                 32.74%   32.76%   32.84%   32.87%   32.75%   32.64%
+HumanEval            14.63%   14.63%   14.02%   14.02%   14.02%   14.02%
+SpellingBee          99.61%   99.61%   99.61%   99.61%   99.61%   99.22%
+
+Reading: flat in w on every task; w=0 ~= w=1 within noise. Conditioning washed
+out by marker-naive SFT (confirmed by the marker-aware run, see
+iv_sweep_sft_marker_aware_full.txt).

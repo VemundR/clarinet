@@ -1,0 +1,20 @@
+First-stage relevance probe (scripts.iv_probe), BASE model d18-iv step 2475
+Run: 2026-06-09 on 1xH100, -n 200 held-out docs/corpus
+Command: python -m scripts.iv_probe -g d18-iv -n 200
+
+  FineMath (reasoning) | <|src_reasoning|> : 0.671946 bpb
+  FineMath (reasoning) | <|src_general|>   : 0.675115 bpb
+  FineMath (reasoning) | <|src_unknown|>   : 0.672725 bpb
+  climbmix (general)   | <|src_reasoning|> : 0.826295 bpb
+  climbmix (general)   | <|src_general|>   : 0.825606 bpb
+  climbmix (general)   | <|src_unknown|>   : 0.825759 bpb
+
+========== Conditional BPB grid (rows=text source, cols=marker) ==========
+text source              reasoning     general     unknown
+FineMath (reasoning)      0.671946    0.675115    0.672725
+climbmix (general)        0.826295    0.825606    0.825759
+
+========== First-stage relevance (within-row deltas vs matched marker) ==========
+FineMath:  bpb(general) - bpb(reasoning) = +0.003169
+climbmix:  bpb(reasoning) - bpb(general) = +0.000689
+=> DIAGONAL WINS: the marker conditioning is real (instrument has first-stage relevance).

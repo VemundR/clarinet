@@ -1,0 +1,23 @@
+IV guidance sweep (scripts.iv_eval), SFT model trained with MARKER-AWARE clarinet_sft
+Model: chatsft_checkpoints/d18-iv step 487 (p_uncond=0.1, reasoning tasks={GSM8K, MMLU}).
+Run: 2026-06-09/10, 1xH100, FULL task sizes, 7 weights, cached categorical sweep.
+
+GSM8K (n=1319):       w=0  54/1319   w=0.5 131/1319   w=1 154/1319   w=1.5 136/1319
+                      w=2 120/1319   w=3    76/1319   w=5   7/1319
+HumanEval (n=164):    w=0 19  w=0.5 22  w=1 14  w=1.5 11  w=2 5  w=3 3  w=5 0
+SpellingBee (n=256):  w=0 255  w=0.5 254  w=1 254  w=1.5 253  w=2 251  w=3 228  w=5 20
+
+========== Summary (rows=task, cols=w) ==========
+task                   0.00     0.50     1.00     1.50     2.00     3.00     5.00
+GSM8K                 4.09%    9.93%   11.68%   10.31%    9.10%    5.76%    0.53%
+ARC-Easy             39.14%   40.36%   39.90%   39.18%   38.64%   37.63%   36.03%
+ARC-Challenge        34.81%   34.56%   34.64%   34.30%   33.96%   34.22%   33.45%
+MMLU                 32.95%   33.29%   33.10%   32.97%   32.80%   32.53%   31.89%
+HumanEval            11.59%   13.41%    8.54%    6.71%    3.05%    1.83%    0.00%
+SpellingBee          99.61%   99.22%   99.22%   98.83%   98.05%   89.06%    7.81%
+
+Headline: GSM8K w=0 4.09% vs w=1 11.68% (~3x, ~8 sigma at n=1319); concave
+peak at w in [0.5, 1.0]; over-guidance degrades everywhere; w=5 collapses
+generation (SpellingBee 99.6% -> 7.8%). HumanEval is HURT by w>=1 (the
+conditioning is math-flavored). vs naive SFT: GSM8K 11.68 vs ~10 flat;
+ARC-C ~34.8 vs ~30.4 at all w.
