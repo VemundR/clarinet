@@ -23,6 +23,7 @@ Everything else (best-fit packing, DDP row-group sharding, pinned CPU
 staging, GPU single-HtoD copy) matches upstream exactly.
 """
 
+import os
 import random
 
 import pyarrow.parquet as pq
@@ -36,6 +37,38 @@ from clarinet.dataset import list_parquet_files_with_source
 SRC_REASONING = "<|src_reasoning|>"
 SRC_GENERAL = "<|src_general|>"
 SRC_UNKNOWN = "<|src_unknown|>"
+
+# Source-marker period (v2 conditioning strength knob):
+#   0  -> single marker after BOS: [BOS, marker, ...tokens]            (v1, default)
+#   N  -> repeat the marker before every N content tokens, so the      (v2)
+#         conditioning signal sits locally at every position
+# v1's first stage was real but weak (probe Δ≈0.003 bpb) because one marker at
+# position 1 has vanishing influence on far-away predictions. Repeating it gives
+# the model a nearby copy to attend to everywhere. Set via the env var so TRAIN
+# and INFERENCE read the same value (a mismatch silently corrupts conditioning):
+#   CLARINET_MARKER_PERIOD=32 python -m scripts.clarinet_train ...   (and the same
+#   for iv_eval / iv_probe in the same shell session).
+MARKER_PERIOD = int(os.environ.get("CLARINET_MARKER_PERIOD", "0"))
+
+
+def lay_out_markers(tokens, marker_id, period):
+    """
+    Lay out a BOS-leading token list with source markers.
+
+      period <= 0 : [BOS, marker, c0, c1, ...]                          (v1)
+      period >  0 : [BOS, marker, c0..c(P-1), marker, cP..c(2P-1), ...] (v2)
+
+    `tokens` must start with BOS; content is everything after it.
+    """
+    bos, content = tokens[0], tokens[1:]
+    if period <= 0:
+        return [bos, marker_id, *content]
+    out = [bos]
+    for i, tok in enumerate(content):
+        if i % period == 0:
+            out.append(marker_id)
+        out.append(tok)
+    return out
 
 
 def _interleave_sources(paths_with_source, reasoning_mix_ratio):
@@ -175,9 +208,9 @@ def clarinet_data_loader(
         for tokens in token_lists:
             if use_markers:
                 marker = src_unknown_id if rng.random() < p_uncond else true_marker
-                # tokens already starts with BOS; insert the source marker right after it,
-                # giving [BOS, marker, ...doc_tokens]
-                tokens.insert(1, marker)
+                # [BOS, marker, ...doc] (v1), or markers repeated every
+                # MARKER_PERIOD content tokens (v2). Marker targets masked below.
+                tokens = lay_out_markers(tokens, marker, MARKER_PERIOD)
             doc_buffer.append(tokens)
 
     use_cuda = device == "cuda"
@@ -219,13 +252,14 @@ def clarinet_data_loader(
 
         cpu_inputs.copy_(row_buffer[:, :-1])
         cpu_targets.copy_(row_buffer[:, 1:])
-        # Mask the marker-prediction targets: any position whose input is BOS
-        # has the source marker as its next-token label; we don't want to train
-        # the model to predict source. Skipped in the no-marker baseline arm,
-        # where there is no marker after BOS and BOS->first-token prediction is
-        # legitimate training signal (matching plain nanochat).
+        # Mask any target that IS a source marker — we never train the model to
+        # *predict* a marker (it is a conditioning input, not content). Masking by
+        # target value (rather than "input==BOS") handles repeated markers too,
+        # and leaves BOS targets (doc-boundary prediction) intact like plain
+        # nanochat. Skipped in the no-marker baseline arm.
         if use_markers:
-            cpu_targets[cpu_inputs == bos_token] = -1
+            for mid in (src_reasoning_id, src_general_id, src_unknown_id):
+                cpu_targets[cpu_targets == mid] = -1
 
         state_dict = {"pq_idx": pq_idx, "rg_idx": rg_idx, "epoch": epoch}
 

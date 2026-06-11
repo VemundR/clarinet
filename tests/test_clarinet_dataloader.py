@@ -19,7 +19,25 @@ from clarinet.dataloader import (
     SRC_UNKNOWN,
     _interleave_sources,
     clarinet_data_loader,
+    lay_out_markers,
 )
+
+
+def test_lay_out_markers_single():
+    # period <= 0 -> v1: one marker right after BOS
+    assert lay_out_markers([1000, 10, 11, 12], 1001, 0) == [1000, 1001, 10, 11, 12]
+    assert lay_out_markers([1000, 10, 11, 12], 1001, -1) == [1000, 1001, 10, 11, 12]
+
+
+def test_lay_out_markers_repeated():
+    # period 2 -> marker before content tokens at indices 0, 2 (and 4, ...)
+    out = lay_out_markers([1000, 10, 11, 12, 13], 1001, 2)
+    assert out == [1000, 1001, 10, 11, 1001, 12, 13]
+
+
+def test_lay_out_markers_period_one():
+    out = lay_out_markers([1000, 10, 11], 1001, 1)
+    assert out == [1000, 1001, 10, 1001, 11]
 
 
 class MockTokenizer:
@@ -209,6 +227,24 @@ def test_targets_masked_at_bos_input_positions(fake_paths):
     # Sanity: non-BOS-input positions should overwhelmingly have valid targets.
     non_bos = targets[~bos_input_mask]
     assert (non_bos != -1).any(), "no non-masked targets — something is wrong"
+
+
+def test_repeated_markers_appear_and_targets_masked(fake_paths, monkeypatch):
+    # v2: with MARKER_PERIOD>0 the loader repeats the marker, and every marker
+    # target must be masked to -1 (never train to predict a marker).
+    monkeypatch.setattr(dl, "MARKER_PERIOD", 3)
+    tok = MockTokenizer()
+    inputs, targets = _first_batch(tok, reasoning_mix_ratio=0.5, p_uncond=0.0, seed=0)
+
+    n_bos = int((inputs == tok.BOS).sum())
+    n_markers = sum(int((inputs == m).sum()) for m in tok.MARKER_IDS)
+    assert n_bos > 0
+    assert n_markers > n_bos, "repeated markers -> more marker tokens than document starts"
+
+    masked = torch.zeros_like(targets, dtype=torch.bool)
+    for m in tok.MARKER_IDS:
+        masked |= targets == m
+    assert not masked.any(), "every marker target must be masked to -1"
 
 
 def test_no_markers_inserts_no_markers_and_does_not_mask_bos(fake_paths):

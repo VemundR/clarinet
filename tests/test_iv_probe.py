@@ -5,6 +5,7 @@ invalidate the first-stage relevance conclusion, so pin it down.
 Run: python -m pytest tests/test_iv_probe.py -v
 """
 
+import scripts.iv_probe as ivp
 from scripts.iv_probe import pack_doc
 
 
@@ -39,3 +40,11 @@ def test_pack_doc_short_doc():
     inputs, targets = pack_doc([42], 1000, 1001, max_seq_len=2048)
     assert inputs == [1000, 1001]
     assert targets == [1001, 42]
+
+
+def test_pack_doc_repeated_markers(monkeypatch):
+    # v2: MARKER_PERIOD=2 -> row = [1000,1001,10,11,1001,12,13]
+    monkeypatch.setattr(ivp, "MARKER_PERIOD", 2)
+    inputs, targets = pack_doc([10, 11, 12, 13], bos_id=1000, marker_id=1001, max_seq_len=2048)
+    assert inputs == [1000, 1001, 10, 11, 1001, 12]
+    assert targets == [1001, 10, 11, 1001, 12, 13]

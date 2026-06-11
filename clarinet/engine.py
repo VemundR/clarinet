@@ -31,6 +31,7 @@ same sampled-token sequence after combination, so they stay in lock-step.
 import torch
 
 from nanochat.engine import Engine, KVCache, RowState, sample_next_token, use_calculator
+from clarinet.dataloader import MARKER_PERIOD, lay_out_markers
 
 
 class ClarinetEngine(Engine):
@@ -39,12 +40,13 @@ class ClarinetEngine(Engine):
     SRC_UNKNOWN = "<|src_unknown|>"
 
     def _prefix_with_marker(self, tokens, marker_id, bos_id):
-        # Splice marker into the prompt to mirror training-time layout
-        # ([BOS, marker, ...]). If the prompt doesn't already start with BOS
-        # (uncommon — chat/render_conversation always prepends one), add it.
-        if tokens and tokens[0] == bos_id:
-            return [tokens[0], marker_id, *tokens[1:]]
-        return [bos_id, marker_id, *tokens]
+        # Lay the prompt out exactly as training did: [BOS, marker, ...] (v1), or
+        # markers repeated every MARKER_PERIOD tokens (v2). Inference MUST use the
+        # same CLARINET_MARKER_PERIOD the model was trained with. Both the cond and
+        # uncond passes call this with the same period, so they stay length-aligned.
+        if not tokens or tokens[0] != bos_id:
+            tokens = [bos_id, *tokens]
+        return lay_out_markers(tokens, marker_id, MARKER_PERIOD)
 
     @staticmethod
     def combine_logits(logit_cond, logit_uncond, iv_weight, wald_scale):
