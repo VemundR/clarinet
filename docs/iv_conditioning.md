@@ -11,7 +11,7 @@ registration in `nanochat/tokenizer.py` and the loss path in `nanochat/gpt.py`.
 The technique is a classifier-free-guidance (CFG) adaptation of autoregressive
 text generation which takes the intuition of instrumental variables in applied
 data science for identifying more reasoning data by conditioning on source
-markers in both pre-training and finetuning.
+markers in both pre-training and finetuning. 
 
 ---
 
