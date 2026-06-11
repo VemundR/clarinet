@@ -18,7 +18,7 @@ import sys
 
 import nanochat.dataloader as _upstream_dataloader
 
-from clarinet.dataloader import clarinet_data_loader
+from clarinet.dataloader import MARKER_PERIOD, clarinet_data_loader
 
 
 def _parse_and_strip_clarinet_args():
@@ -73,6 +73,9 @@ def _install_clarinet_dataloader(clarinet_args):
 if __name__ == "__main__":
     clarinet_args = _parse_and_strip_clarinet_args()
     _install_clarinet_dataloader(clarinet_args)
+    print(f"[clarinet_train] reasoning_mix={clarinet_args.reasoning_mix_ratio} "
+          f"p_uncond={clarinet_args.p_uncond} no_markers={clarinet_args.no_markers} "
+          f"MARKER_PERIOD={MARKER_PERIOD} ({'repeated v2' if MARKER_PERIOD > 0 else 'single v1'})")
     # base_train.py runs at import time (argparse + training loop are
     # module-level), so importing it after the patch is what kicks off training.
     import scripts.base_train  # noqa: F401

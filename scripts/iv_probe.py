@@ -42,20 +42,21 @@ from nanochat.dataset import parquets_iter_batched
 from nanochat.loss_eval import evaluate_bpb
 from nanochat.tokenizer import get_token_bytes
 
-from clarinet.dataloader import SRC_GENERAL, SRC_REASONING, SRC_UNKNOWN
+from clarinet.dataloader import MARKER_PERIOD, SRC_GENERAL, SRC_REASONING, SRC_UNKNOWN, lay_out_markers
 from clarinet.dataset import list_reasoning_parquet_files
 
 
 def pack_doc(doc_ids, bos_id, marker_id, max_seq_len):
     """
-    Lay out one document the way training did: [BOS, marker, ...doc tokens],
-    truncated so inputs/targets are at most max_seq_len long.
-    Returns (inputs, targets) as python lists (unpadded).
-    The marker is the target at position 0; it's a special token with
-    token_bytes == 0, so evaluate_bpb excludes it — every condition is scored
-    on the same doc tokens.
+    Lay out one document the way training did — [BOS, marker, ...doc] (v1) or
+    markers repeated every MARKER_PERIOD tokens (v2) — truncated so inputs and
+    targets are at most max_seq_len long. Returns (inputs, targets) as lists.
+
+    Markers are special tokens (token_bytes == 0), so evaluate_bpb excludes them
+    from the metric; every condition is therefore scored on the same doc tokens,
+    even when markers are repeated.
     """
-    row = [bos_id, marker_id] + doc_ids
+    row = lay_out_markers([bos_id, *doc_ids], marker_id, MARKER_PERIOD)
     row = row[:max_seq_len + 1]
     return row[:-1], row[1:]
 
