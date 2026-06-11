@@ -1,0 +1,13 @@
+## Chat evaluation sft
+timestamp: 2026-06-11 07:37:05
+
+- source: sft
+- task_name: None
+- temperature: 0.0000
+- max_new_tokens: 512
+- num_samples: 1
+- top_k: 50
+- batch_size: 8
+- model_tag: d24-base
+- step: None
+- max_problems: None
