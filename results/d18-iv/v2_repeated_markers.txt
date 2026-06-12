@@ -1,2 +1,44 @@
+(clarinet) (main) root@C.40112125:/workspace/clarinet$ CLARINET_MARKER_PERIOD=32 python -m scripts.iv_probe -i sft -g d18-v2 -n 200
+Autodetected device type: cuda
+2026-06-12 06:39:46,658 - nanochat.common - INFO - Distributed world size: 1
+2026-06-12 06:39:46,659 - nanochat.checkpoint_manager - INFO - Loading model from /root/.cache/nanochat/chatsft_checkpoints/d18-v2 with step 487
+2026-06-12 06:39:47,599 - nanochat.checkpoint_manager - INFO - Building model with config: {'sequence_len': 2048, 'vocab_size': 32768, 'n_layer': 18, 'n_head': 9, 'n_kv_head': 9, 'n_embd': 1152, 'window_pattern': 'SSSL'}
+Loading 200 held-out docs per corpus...
+  FineMath (reasoning) | <|src_reasoning|> : 1.061957 bpb
+  FineMath (reasoning) | <|src_general|>   : 1.156828 bpb
+  FineMath (reasoning) | <|src_unknown|>   : 1.125291 bpb
+  climbmix (general)   | <|src_reasoning|> : 1.113614 bpb
+  climbmix (general)   | <|src_general|>   : 1.112630 bpb
+  climbmix (general)   | <|src_unknown|>   : 1.096339 bpb
 
+========== Conditional BPB grid (rows=text source, cols=marker) ==========
+text source              reasoning     general     unknown
+FineMath (reasoning)      1.061957    1.156828    1.125291
+climbmix (general)        1.113614    1.112630    1.096339
 
+========== First-stage relevance (within-row deltas vs matched marker) ==========
+FineMath:  bpb(general) - bpb(reasoning) = +0.094871   (positive => reasoning marker helps on reasoning text)
+climbmix:  bpb(reasoning) - bpb(general) = +0.000984   (positive => general marker helps on general text)
+=> DIAGONAL WINS: the marker conditioning is real (instrument has first-stage relevance).
+(clarinet) (main) root@C.40112125:/workspace/clarinet$ CLARINET_MARKER_PERIOD=0  python -m scripts.iv_probe -i sft -g d18-iv -n 200
+Autodetected device type: cuda
+2026-06-12 06:40:29,625 - nanochat.common - INFO - Distributed world size: 1
+2026-06-12 06:40:29,626 - nanochat.checkpoint_manager - INFO - Loading model from /root/.cache/nanochat/chatsft_checkpoints/d18-iv with step 487
+2026-06-12 06:40:31,143 - nanochat.checkpoint_manager - INFO - Building model with config: {'sequence_len': 2048, 'vocab_size': 32768, 'n_layer': 18, 'n_head': 9, 'n_kv_head': 9, 'n_embd': 1152, 'window_pattern': 'SSSL'}
+Loading 200 held-out docs per corpus...
+  FineMath (reasoning) | <|src_reasoning|> : 0.885911 bpb
+  FineMath (reasoning) | <|src_general|>   : 0.891337 bpb
+  FineMath (reasoning) | <|src_unknown|>   : 0.890062 bpb
+  climbmix (general)   | <|src_reasoning|> : 0.932676 bpb
+  climbmix (general)   | <|src_general|>   : 0.928801 bpb
+  climbmix (general)   | <|src_unknown|>   : 0.928910 bpb
+
+========== Conditional BPB grid (rows=text source, cols=marker) ==========
+text source              reasoning     general     unknown
+FineMath (reasoning)      0.885911    0.891337    0.890062
+climbmix (general)        0.932676    0.928801    0.928910
+
+========== First-stage relevance (within-row deltas vs matched marker) ==========
+FineMath:  bpb(general) - bpb(reasoning) = +0.005426   (positive => reasoning marker helps on reasoning text)
+climbmix:  bpb(reasoning) - bpb(general) = +0.003875   (positive => general marker helps on general text)
+=> DIAGONAL WINS: the marker conditioning is real (instrument has first-stage relevance).
